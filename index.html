@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <link href="https://cdn.bootcss.com/bootstrap/4.1.1/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
+    <title>上传文件</title>
+</head>
+<body>
+    
+    <div class="upload-container">
+        <div class="logo">
+            <div class="title text-gradient">上传图片</div>
+            
+        </div>
+        <form class="upload-file" method="post" action="#"
+            enctype="multipart/form-data">
+            <!-- 上传文件列表 -->
+            <div id="v-file-box">
+                <div class="v-file-list"></div>
+                <div id="select-file">
+                    <input id="file" name="file" type="file"  multiple="multiple" />
+                    <div id="v-file"><span>选择图片/文件</span></div>
+                </div>
+            </div>
+            
+            <input type="button" class="btn btn-success" id="submit" value="提交">
+        </form>
+    </div>
+    <div class="local-container">
+        <h3>已上传</h3>
+        <div class="v-local-list"></div>
+    </div>
+    
+    <input type="text" id="copy-dom">
+
+    <script id="local-item" type="text/x-jquery-tmpl">
+        {{each(i,item) list}}
+            <div class="v-local-item">
+                {{if item.isImg}}
+                <img class="local-item-img" src="${item.path}" alt="">
+                <input type="hidden" class="${item.path}" />
+                <button data-clipboard-target=".${item.path}" data-path="${item.path}" class="copy-btn copy-img">复制链接</button>
+                {{else}}
+                <p>非图片文件</p>
+                <p>
+                    <button data-path="${item.path}" class="copy-btn copy-file">复制链接</button>
+                </p>
+                {{/if}}
+            </div>
+        {{/each}}
+        
+    </script>
+    
+
+    <script src="https://cdn.bootcss.com/jquery/3.3.1/jquery.js"></script>
+    <script src="https://cdn.bootcss.com/clipboard.js/2.0.1/clipboard.min.js"></script>
+    <script src="/jquery.tmpl.js"></script>
+    <script>
+        // 本地存储管理
+        const LocalStorageServer = {
+            get() {
+                let data = localStorage.getItem('_upload_list_');
+                if (!data) {
+                    return [];
+                }
+                data = JSON.parse(data);
+                return data;
+            },
+            set(list) {
+                const data = this.get();
+                const setData = data.concat(list);
+                localStorage.setItem('_upload_list_', JSON.stringify(setData));
+            }
+        }
+        // 文件上传缓存管理
+        const CacheHandler = {
+            set(files) {
+                let data = CacheHandler._files;
+                if (data && data instanceof Array) {
+                    data = data.concat(files);
+                } else {
+                    CacheHandler._files = files;
+                }
+            },
+            reset(files) {
+                if (files && files.length) {
+                    CacheHandler._files = files;
+                }
+            },
+            get() {
+                return CacheHandler._files;
+            },
+            remove(fileName) {
+                if (!fileName) {
+                    CacheHandler._files = null;
+                } else {
+                    let data = CacheHandler.get();
+                    data = data.filter(item => item.name !== fileName);
+                    CacheHandler.reset(data);
+                }
+            }
+        };
+        // 视图渲染
+        const RenderView = {
+            addFiles(filesName) {
+                filesName.forEach(fileName => {
+                    const $removeBtn = $('<span class="v-remove-file">')
+                        .text('x')
+                        .attr('file', fileName);
+                    const $fileItem = $('<div class="v-file-item">')
+                        .attr('file', fileName)
+                        .text(fileName)
+                        .append($removeBtn);
+                    $('.v-file-list').append($fileItem);
+                });
+            },
+            removeFile(fileName) {
+                $(`[file='${fileName}']`).remove();
+            },
+            renderLocalData(paths) {
+                const list = paths.map(path => {
+                    return {
+                        path,
+                        isImg: /\.(gif|jpg|jpeg|png|GIF|JPG|PNG)$/.test(path)
+                    };
+                });
+                $("#local-item").tmpl({list}).appendTo('.v-local-list');
+            }
+        }
+        // 执行函数
+        const Handles = {
+            selectFiles: () => {
+                $('#file').trigger('click');
+            },
+            inputFiles() {
+                let files = $('#file')[0].files;
+                files = [...new Set(files)];
+                
+                CacheHandler.set(files);
+                RenderView.addFiles(files.map(item => item.name));
+            },
+            removeFile(e) {
+                const $target = $(e.currentTarget);
+                const file = $target.attr('file');
+                CacheHandler.remove(file);
+                RenderView.removeFile(file);
+            },
+            submit() {
+                const maxSize = 1024 * 1024 * 6;
+                const files = CacheHandler.get();
+                const formData = new FormData();
+                let hasBig = false;
+                let bigFile = '';
+                files.forEach((file, index) => {
+                    if (file.size > maxSize) {
+                        hasBig = true;
+                        bigFile = file.name;
+                    }
+                    formData.append('file' + index , file);
+                });
+                if (hasBig) {
+                    return alert(`${bigFile}文件大于6M，不能进行上传!`);
+                }
+                $.ajax({
+                    type: 'post',
+                    url: `http://${window.location.host}/upload`,
+                    contentType: false,
+                    processData: false,
+                    data: formData,
+                    success: (res) => {
+                        RenderView.renderLocalData(res.paths);
+                        LocalStorageServer.set(res.paths);
+                        Handles.resetView();
+                    }
+                });
+            },
+            resetView() {
+                CacheHandler.remove();
+                $('.v-file-item').remove();
+            },
+            copy(e) {
+                const $target = $(e.currentTarget);
+                const {path} = $target.data();
+                $('#copy-dom').val(path);
+                $('#copy-dom')[0].select();
+                document.execCommand('Copy');
+            },
+        }
+
+        const initLocalStorageImgs = () => {
+            const list = LocalStorageServer.get();
+            RenderView.renderLocalData(list);
+        }
+
+        const init = () => {
+            $('#v-file').on('click', Handles.selectFiles);
+
+            $('#file').on('change', Handles.inputFiles);
+            
+            $(document).on('click', '.v-remove-file', Handles.removeFile)
+                .on('click', '.copy-btn', Handles.copy);
+
+            $('#submit').on('click', Handles.submit);
+
+            initLocalStorageImgs();
+        }
+        $(init);
+
+
+    </script>
+</body>
+</html>
