@@ -5,7 +5,9 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node app.js"
+    "start": "pm2 start --name qiniu_upload app.js --watch",
+    "restart": "pm2 restart --name qiniu_upload app.js --watch",
+    "stop": "pm2 stop --name qiniu_upload app.js"
   },
   "dependencies": {
     "body-parser": "^1.18.2",
